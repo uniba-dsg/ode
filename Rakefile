@@ -77,6 +77,81 @@ define "ode" do
   manifest["Implementation-Vendor"] = "Apache Software Foundation"
   meta_inf << file("NOTICE")
 
+
+TOMCAT7 = 'org.apache.tomcat.embed:tomcat-embed-core:jar:7.0.65', 'org.apache.tomcat.embed:tomcat-embed-jasper:jar:7.0.65',
+          'org.apache.tomcat.embed:tomcat-embed-logging-juli:jar:7.0.65', 'org.apache.tomcat:tomcat-api:jar:7.0.65',
+          'org.apache.tomcat:tomcat-el-api:jar:7.0.65', 'org.apache.tomcat:tomcat-jasper-el:jar:7.0.65',
+          'org.apache.tomcat:tomcat-jsp-api:jar:7.0.65', 'org.apache.tomcat:tomcat-juli:jar:7.0.65',
+          'org.apache.tomcat:tomcat-servlet-api:jar:7.0.65', 'org.apache.tomcat:tomcat-util:jar:7.0.65',
+          'org.eclipse.jdt.core.compiler:ecj:jar:3.7.2', 'org.eclipse.jdt.core.compiler:ecj:jar:4.2.1'
+
+
+#developed from axis2-war
+desc "ODE Axis Tomcat-Embedded Standalone with Servlet"
+  define "axis2-tomcat" do
+    # all projects included
+    TOMCAT_PROJECTS = projects("axis2", "bpel-api", "bpel-compiler", "bpel-connector", "bpel-dao",
+      "bpel-epr", "bpel-obj", "bpel-ql", "bpel-runtime", "scheduler-simple", "bpel-schemas", 
+      "bpel-store", "dao-hibernate", "jacob", "jca-ra", "jca-server", "utils", "dao-jpa", "agents")
+    # dependencies needed for compiling and executing tomcat - ordering important!
+    TOMCAT_DEPENDENCIES = AXIOM, AXIS2_ALL, COMMONS.lang, COMMONS.collections, COMMONS.logging, COMMONS.pool,
+      COMMONS.httpclient, COMMONS.codec, LOG4J, XERCES, JAVAX.stream, WSDL4J, SAXON, XMLBEANS, SLF4J, JAXEN,
+      XALAN, JAVAX.connector, COMMONS.beanutils, DERBY, JAVAX.transaction, GERONIMO.transaction, GERONIMO.connector,
+      TRANQL, BACKPORT, GERONIMO.kernel, JAVAX.ejb, SPRING, DOM4J, JAVAX.persistence, OPENJPA, HSQLDB, COMMONS.io,
+      ANT, JAVAX.javamail, WOODSTOX, ANNONGEN, COMMONS.fileupload, DERBY_TOOLS, JAVAX.activation, JAVAX.jms, JIBX,
+      WS_COMMONS.neethi, WS_COMMONS.xml_schema, AXIS2_MODULES.libs, TOMCAT7, JAVAX.servlet, JENCKS
+
+    compile.with TOMCAT_DEPENDENCIES, TOMCAT_PROJECTS
+
+    # add files of projects to jar
+	package(:jar).tap do |task|
+	  task.merge(TOMCAT_PROJECTS)
+	end
+
+    #include files into WEB-INF as also available in axis2-war
+    package(:jar).path("WEB-INF").tap do |web_inf|
+      web_inf.merge project("dao-jpa-ojpa-derby").package(:zip)
+      web_inf.merge project("dao-hibernate-db").package(:zip)
+      web_inf.include project("axis2").path_to("src/main/wsdl/*")
+      web_inf.include project("bpel-schemas").path_to("src/main/xsd/pmapi.xsd")
+      web_inf.include project("axis2-war").path_to("src/main/webapp/WEB-INF/*")
+    end
+
+    #add additional content to WEB-INF
+    package(:jar).path("WEB-INF/modules").include(artifacts(AXIS2_MODULES.mods))
+    package(:jar).path("WEB-INF/classes").include(project("bpel-store").path_to("src/main/resources/*"))
+
+    # compile with seperate libs folder
+    compile {
+      libs = _(:target, :libs)
+      if Dir.exists?(libs)
+	    FileUtils.remove_dir(libs)
+      end
+      mkdir_p libs
+
+      # copy dependency-libaries into libs folder
+      Buildr.artifacts(TOMCAT_DEPENDENCIES).each { |artifact| artifact.invoke }.map { |d| cp "#{d.to_s}", libs}
+    }
+
+    # add libs in libs folder to manifests classpath
+    manifest_cp = Buildr.artifacts(TOMCAT_DEPENDENCIES).each { |artifact| artifact.invoke }.map { |d| "#{:libs}/#{File.basename(d.to_s)}"}.join(" ")
+    manifest['Main-Class'] = 'org.apache.ode.tomcat.Main'
+    manifest['Class-Path'] = manifest_cp
+
+    package :jar
+  end
+
+  desc "Tomcat7-Embedded for extractedWar deployment"
+  define "tomcat7-war-deployment-jar" do
+   compile.with TOMCAT7
+   #package(:jar).with :manifest=>manifest.merge('Main-Class'=>'de.uni.ba.main.Main') do|task|
+   package(:jar).tap do|task|
+    task.merge compile.dependencies
+   end
+   manifest['Main-Class']='de.uni.ba.main.Main'
+  end
+
+
   desc "ODE Axis Integration Layer"
   define "axis2" do
     compile.with projects("bpel-api", "bpel-connector", "bpel-dao", "bpel-epr", "bpel-runtime",
